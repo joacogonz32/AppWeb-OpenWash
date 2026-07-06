@@ -1,0 +1,160 @@
+# Mutations — Conector OpenWash
+# Ver contratos completos en: specs/001-gestion-turnos-lavado/contracts/operations.gql
+#
+# NOTA ARQUITECTURAL (tasks.md INCON-01, research.md RD-002):
+# CrearTurno y cancelaciones que deben actualizar Firestore se implementan como
+# Cloud Functions callables (functions/src/callables/), no como mutations directas.
+# Las mutations aquí son para operaciones que no requieren actualizar Firestore.
+
+# FR-001 — Registrar nuevo usuario (US1)
+# Flujo: createUserWithEmailAndPassword → (éxito) → RegistrarUsuario
+mutation RegistrarUsuario(
+  $nombre: String!
+  $apellido: String!
+  $email: String!
+  $telefono: String!
+) @auth(level: USER) {
+  usuario_insert(
+    data: {
+      uid_expr: "auth.uid"
+      nombre: $nombre
+      apellido: $apellido
+      email: $email
+      telefono: $telefono
+      rol: "user"
+      activo: true
+    }
+  )
+}
+
+# FR-007 — Editar perfil propio (US4)
+# Campos editables: nombre, apellido, teléfono. Email NO es editable (Assumptions-6).
+mutation ActualizarPerfilPropio(
+  $nombre: String!
+  $apellido: String!
+  $telefono: String!
+) @auth(level: USER) {
+  usuario_update(
+    key: { uid_expr: "auth.uid" }
+    data: {
+      nombre: $nombre
+      apellido: $apellido
+      telefono: $telefono
+    }
+  )
+}
+
+# FR-009 — Eliminar cuenta propia (US4)
+# Flujo: modal de confirmación → EliminarCuentaPropia → deleteUser() (Firebase Auth)
+# → Auth trigger onUserDeleted → cancela turnos futuros activos (FR-033)
+mutation EliminarCuentaPropia @auth(level: USER) {
+  usuario_delete(key: { uid_expr: "auth.uid" })
+}
+
+# ─── Mutations de cliente para turnos ────────────────────────────────────────
+
+# FR-016 — Cancelar turno propio (US3)
+# PRECONDICIÓN (validada en usePuedeCancelar antes de llamar esta mutation):
+#   - turno.usuarioUid === auth.uid
+#   - turno.estado ∈ { "pendiente", "confirmado" }
+#   - (turno.fecha + turno.horario) - ahora > 30 minutos (FR-016, FR-017)
+# NOTA: la actualización del slot de Firestore la hace la Cloud Function trigger
+# que detecta el cambio de estado a "cancelado" (functions/src/callables/cancelarTurno.ts)
+mutation CancelarTurnoPropio($turnoId: UUID!) @auth(level: USER) {
+  turno_update(
+    key: { id: $turnoId }
+    data: { estado: "cancelado" }
+  )
+}
+
+# ─── Mutations de administrador ──────────────────────────────────────────────
+# Verificación de rol admin se realiza en AdminRoute / hooks antes de llamar.
+
+# FR-021 — Editar datos de cualquier usuario (US5)
+mutation ActualizarDatosUsuario(
+  $uid: String!
+  $nombre: String!
+  $apellido: String!
+  $telefono: String!
+) @auth(level: USER) {
+  usuario_update(
+    key: { uid: $uid }
+    data: {
+      nombre: $nombre
+      apellido: $apellido
+      telefono: $telefono
+    }
+  )
+}
+
+# FR-022 — Cambiar rol de un usuario (US5)
+# $rol: "user" | "admin". Efectivo desde la próxima sesión del usuario.
+mutation CambiarRolUsuario(
+  $uid: String!
+  $rol: String!
+) @auth(level: USER) {
+  usuario_update(
+    key: { uid: $uid }
+    data: { rol: $rol }
+  )
+}
+
+# FR-023 — Activar/desactivar cuenta en Data Connect (US5)
+# IMPORTANTE: esta mutation solo actualiza el campo activo en Data Connect.
+# El bloqueo real en Firebase Auth (disabled: true/false) requiere la Cloud Function
+# callable setActivoUsuario (functions/src/callables/setActivoUsuario.ts).
+# Ver research.md RD-006 para la estrategia de doble bloqueo.
+mutation SetActivoUsuario(
+  $uid: String!
+  $activo: Boolean!
+) @auth(level: USER) {
+  usuario_update(
+    key: { uid: $uid }
+    data: { activo: $activo }
+  )
+}
+
+# FR-024 — Eliminar cuenta de cualquier usuario (solo admin) (US5)
+# El cliente llama primero a la Cloud Function callable eliminarUsuarioAdmin
+# que usa Admin SDK para eliminar en Firebase Auth; luego esta mutation.
+mutation EliminarCuentaAdmin($uid: String!) @auth(level: USER) {
+  usuario_delete(key: { uid: $uid })
+}
+
+# FR-028 — Cambiar estado de un turno manualmente (solo admin) (US6)
+# Transiciones válidas: pendiente→confirmado, confirmado→completado,
+#   pendiente/confirmado→cancelado.
+# Las transiciones inválidas se validan en esTransicionValida() antes del call.
+# Si nuevoEstado = "cancelado", la Cloud Function callable crearTurno/cancelarTurno
+# actualiza la disponibilidad en Firestore.
+mutation CambiarEstadoTurno(
+  $turnoId: UUID!
+  $nuevoEstado: String!
+) @auth(level: USER) {
+  turno_update(
+    key: { id: $turnoId }
+    data: { estado: $nuevoEstado }
+  )
+}
+
+# FR-029 — Cancelar turno desde panel admin (US6)
+# Semánticamente equivalente a CambiarEstadoTurno con nuevoEstado = "cancelado".
+# Se mantiene separado para trazabilidad de FR-029.
+mutation CancelarTurnoAdmin($turnoId: UUID!) @auth(level: USER) {
+  turno_update(
+    key: { id: $turnoId }
+    data: { estado: "cancelado" }
+  )
+}
+
+# ─── Mutations internas de Cloud Functions (NO expuestas en el conector web) ─
+# Usadas por Cloud Functions via Admin SDK.
+# Ver contracts/operations.gql sección operaciones internas.
+
+# FR-033 — Cancelar todos los turnos futuros activos de un usuario
+# Llamada por Auth trigger onUserDeleted (functions/src/triggers/cancelarTurnosEnCascada.ts)
+# mutation CancelarTurnosFuturosDeUsuario($userId: String!) { ... }
+
+# FR-034 — Completar turnos vencidos (Cloud Scheduler)
+# Llamada por el scheduler cada 5 min (functions/src/schedulers/completarTurnos.ts)
+# mutation CompletarTurnosVencidos { ... }

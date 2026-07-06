@@ -1,0 +1,61 @@
+# Schema de Firebase Data Connect — Open Wash
+# Reemplaza el schema de ejemplo (películas).
+# Ver: specs/001-gestion-turnos-lavado/data-model.md sección 1
+#
+# ÍNDICES REQUERIDOS (a crear en Cloud SQL):
+#   turnos:
+#     idx_turnos_fecha_horario  → (fecha, horario)     BTREE compuesto  — FR-014
+#     idx_turnos_usuarioid      → (usuarioUid)          BTREE            — FR-018, FR-019
+#     idx_turnos_estado         → (estado)              BTREE            — FR-027
+#     idx_turnos_fecha          → (fecha)               BTREE            — FR-030
+#     idx_turnos_patente        → (patente)             GIN + pg_trgm    — FR-031
+#   usuarios:
+#     uq_usuarios_email          → (email)              UNIQUE           — FR-001 (via @unique)
+#     idx_usuarios_nombre_apell  → (LOWER(nombre), LOWER(apellido)) GIN + pg_trgm — FR-031
+#
+# NOTA pg_trgm: verificar con `SELECT * FROM pg_extension WHERE extname = 'pg_trgm';`
+# en la instancia appweb-openwash-fdc antes del deploy.
+
+# ─────────────────────────────────────────────────────────────────
+# ENTIDAD: Usuario
+# ─────────────────────────────────────────────────────────────────
+# Relación inversa generada por Data Connect:
+#   turnos_on_usuario: [Turno!]!
+type Usuario @table(name: "usuarios", key: "uid") {
+  # uid: Firebase Auth UID. Se inyecta automáticamente desde auth.uid al insertar.
+  uid: String! @col(dataType: "varchar(128)") @default(expr: "auth.uid")
+  nombre: String! @col(dataType: "varchar(100)")
+  apellido: String! @col(dataType: "varchar(100)")
+  # email: único; no editable por el propio usuario (Assumptions-6, FR-007).
+  email: String! @col(dataType: "varchar(255)") @unique
+  telefono: String! @col(dataType: "varchar(30)")
+  # rol: "user" (default) | "admin". CHECK: rol IN ('user', 'admin') — FR-022
+  rol: String! @col(dataType: "varchar(10)") @default(value: "user")
+  # activo: true por defecto. Admin puede modificarlo a false — FR-023, research.md RD-006
+  activo: Boolean! @default(value: true)
+}
+
+# ─────────────────────────────────────────────────────────────────
+# ENTIDAD: Turno
+# ─────────────────────────────────────────────────────────────────
+# Relación N:1 con Usuario.
+# Los datos del vehículo (patente, tipoVehiculo) están embebidos aquí.
+# No existe entidad Vehículo independiente en v1.0 (Assumptions-2).
+type Turno @table(name: "turnos") {
+  id: UUID! @default(expr: "uuidV4()")
+  # FK → Usuario. Data Connect genera columna usuarioUid automáticamente.
+  usuario: Usuario!
+  # CHECK: servicio IN ('Básico', 'Completo', 'Premium')
+  servicio: String! @col(dataType: "varchar(20)")
+  fecha: Date!
+  # horario: HH:MM, valores válidos 08:00–20:45 cada 15 min (FR-012)
+  horario: String! @col(dataType: "varchar(5)")
+  # CHECK: estado IN ('pendiente', 'confirmado', 'completado', 'cancelado')
+  # En práctica el turno se persiste como 'confirmado' directamente (tasks.md INCON-02)
+  estado: String! @col(dataType: "varchar(20)") @default(value: "pendiente")
+  # Vehículo embebido (patente y tipoVehiculo) — Assumptions-2
+  # CHECK: tipoVehiculo IN ('auto', 'camioneta', 'moto')
+  patente: String! @col(dataType: "varchar(10)")
+  tipoVehiculo: String! @col(dataType: "varchar(15)")
+  creadoEn: Timestamp! @default(expr: "request.time")
+}

@@ -1,0 +1,17 @@
+{
+  "name": "openwash",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "emulators": "firebase emulators:start",
+    "emulators:seed": "firebase emulators:start --import=./emulator-data",
+    "seed": "node scripts/seed.js",
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "functions:build": "cd functions && npm run build",
+    "functions:build:watch": "cd functions && npm run build:watch",
+    "test:frontend": "cd frontend && npm run test",
+    "test:functions": "cd functions && npm run test",
+    "test:all": "npm run test:frontend && npm run test:functions"
+  }
+}

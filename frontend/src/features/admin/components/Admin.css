@@ -1,0 +1,204 @@
+/* Admin pages — tabla, filtros, modal */
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table th {
+  background: #f0f4ff;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  font-weight: 600;
+  color: #333;
+  border-bottom: 2px solid #d1d9ef;
+}
+
+.admin-table td {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: middle;
+}
+
+.admin-table tr.row-inactive td {
+  color: #aaa;
+}
+
+.table-container {
+  overflow-x: auto;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+/* Badges */
+.badge {
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.badge-admin { background: #fef3c7; color: #92400e; }
+.badge-cliente { background: #dbeafe; color: #1e40af; }
+.badge-activo { background: #d1fae5; color: #065f46; }
+.badge-inactivo { background: #fee2e2; color: #991b1b; }
+.badge-estado-confirmado { background: #bfdbfe; color: #1e3a8a; }
+.badge-estado-completado { background: #d1fae5; color: #065f46; }
+.badge-estado-cancelado { background: #fee2e2; color: #991b1b; }
+
+/* Filtros bar */
+.filtros-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  align-items: flex-end;
+}
+
+.filtro-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  position: relative;
+}
+
+.filtro-group label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #555;
+}
+
+.filtro-group input,
+.filtro-group select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  min-width: 140px;
+}
+
+.btn-clear {
+  position: absolute;
+  right: 0.3rem;
+  bottom: 0.45rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.buscando {
+  font-size: 0.78rem;
+  color: #888;
+}
+
+/* Action buttons */
+.actions-cell {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn-action {
+  padding: 0.3rem 0.7rem;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.btn-ok { background: #d1fae5; color: #065f46; }
+.btn-ok:hover { background: #a7f3d0; }
+.btn-warn { background: #fef3c7; color: #92400e; }
+.btn-warn:hover { background: #fde68a; }
+.btn-danger { background: #fee2e2; color: #991b1b; }
+.btn-danger:hover { background: #fecaca; }
+.btn-primary-sm { background: #3b82f6; color: white; }
+.btn-primary-sm:hover { background: #2563eb; }
+
+.action-msg {
+  font-size: 0.78rem;
+  color: #555;
+  font-style: italic;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-box {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  min-width: 320px;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+
+.modal-box h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+.estado-options {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+
+.estado-btn {
+  padding: 0.5rem 1rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  background: white;
+  text-transform: capitalize;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.estado-btn.selected {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.estado-confirmado { border-color: #93c5fd; }
+.estado-completado { border-color: #6ee7b7; }
+.estado-cancelado { border-color: #fca5a5; }
+
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+.btn-secondary {
+  padding: 0.5rem 1.25rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-secondary:hover { background: #f3f4f6; }
+
+/* Wide container override */
+.page-container.wide {
+  max-width: 1100px;
+  padding: 2rem;
+}

@@ -1,0 +1,132 @@
+# Queries — Conector OpenWash
+# Ver contratos completos en: specs/001-gestion-turnos-lavado/contracts/operations.gql
+
+# FR-006 — Ver perfil propio (US4)
+query ObtenerPerfilPropio @auth(level: USER) {
+  usuario(key: { uid_expr: "auth.uid" }) {
+    uid
+    nombre
+    apellido
+    email
+    telefono
+    rol
+    activo
+  }
+}
+
+# FR-018, FR-019 — Turnos propios del cliente (US3)
+# La clasificación próximos/historial se aplica en el cliente (useTurnosPropios hook).
+query ObtenerTurnosPropios @auth(level: USER) {
+  turnos(
+    where: { usuarioUid: { eq_expr: "auth.uid" } }
+    orderBy: [{ fecha: ASC }, { horario: ASC }]
+  ) {
+    id
+    servicio
+    fecha
+    horario
+    estado
+    patente
+    tipoVehiculo
+    creadoEn
+  }
+}
+
+# FR-020 — Listar todos los usuarios (solo admin) (US5)
+# Verificación de rol admin se realiza en AdminRoute antes de ejecutar la query.
+query ObtenerUsuariosAdmin @auth(level: USER) {
+  usuarios(orderBy: [{ apellido: ASC }, { nombre: ASC }]) {
+    uid
+    nombre
+    apellido
+    email
+    telefono
+    rol
+    activo
+  }
+}
+
+# FR-026, FR-027 — Turnos con filtros opcionales (solo admin) (US6)
+query ObtenerTurnosAdmin(
+  $fecha: Date
+  $estado: String
+  $servicio: String
+) @auth(level: USER) {
+  turnos(
+    where: {
+      _and: [
+        { fecha: { eq: $fecha } }
+        { estado: { eq: $estado } }
+        { servicio: { eq: $servicio } }
+      ]
+    }
+    orderBy: [{ fecha: ASC }, { horario: ASC }]
+  ) {
+    id
+    servicio
+    fecha
+    horario
+    estado
+    patente
+    tipoVehiculo
+    creadoEn
+    usuario {
+      uid
+      nombre
+      apellido
+      email
+    }
+  }
+}
+
+# FR-030 — Buscar turnos por fecha específica (solo admin) (US6)
+query BuscarTurnosPorFecha($fecha: Date!) @auth(level: USER) {
+  turnos(
+    where: { fecha: { eq: $fecha } }
+    orderBy: [{ horario: ASC }]
+  ) {
+    id
+    servicio
+    fecha
+    horario
+    estado
+    patente
+    tipoVehiculo
+    usuario {
+      uid
+      nombre
+      apellido
+    }
+  }
+}
+
+# FR-031 — Buscar por nombre/apellido de cliente o patente (solo admin) (US6)
+# Coincidencia parcial insensible a mayúsculas y acentos.
+# Ver research.md RD-003 para estrategia de índices con pg_trgm.
+query BuscarTurnosPorClienteOPatente(
+  $textoBusqueda: String!
+) @auth(level: USER) {
+  turnos(
+    where: {
+      _or: [
+        { patente: { contains: $textoBusqueda } }
+        { usuario: { nombre: { contains: $textoBusqueda } } }
+        { usuario: { apellido: { contains: $textoBusqueda } } }
+      ]
+    }
+    orderBy: [{ fecha: ASC }, { horario: ASC }]
+  ) {
+    id
+    servicio
+    fecha
+    horario
+    estado
+    patente
+    tipoVehiculo
+    usuario {
+      uid
+      nombre
+      apellido
+    }
+  }
+}

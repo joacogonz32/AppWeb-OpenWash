@@ -107,6 +107,12 @@ dist
 # Docusaurus cache and generated files
 .docusaurus
 
+# AI / tool metadata
+.agents/
+.claude/
+.specify/
+skills-lock.json
+
 # Serverless directories
 .serverless/
 

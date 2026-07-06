@@ -1,0 +1,449 @@
+# Data Connect Operations — Open Wash
+# Feature: Gestión de Turnos
+# Spec: specs/001-gestion-turnos-lavado/spec.md
+# Fecha: 2026-07-06
+# Estado: Draft — generado por speckit.plan
+#
+# Este archivo documenta todas las queries y mutations del conector de Data Connect
+# para el proyecto OpenWash. Reemplaza el conector de ejemplo en dataconnect/example/.
+# El conector de producción se ubicará en dataconnect/connector/
+# (queries.gql y mutations.gql separados).
+#
+# Trazabilidad completa:
+#   Queries   → FR-006, FR-018, FR-019, FR-020, FR-026, FR-027, FR-030, FR-031
+#   Mutations → FR-001, FR-007, FR-008, FR-009, FR-010, FR-011, FR-014,
+#               FR-016, FR-021, FR-022, FR-023, FR-024, FR-028, FR-029
+#
+# Ver data-model.md para schema completo de tipos y directivas @auth.
+# Ver research.md RD-002 para la estrategia de atomicidad en CrearTurno.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QUERIES
+# ─────────────────────────────────────────────────────────────────────────────
+
+# FR-006 — Ver datos del perfil propio
+# Actor: usuario autenticado (cualquier rol)
+# Pantalla: /perfil (US4)
+query ObtenerPerfilPropio @auth(level: USER) {
+  usuario(key: { uid_expr: "auth.uid" }) {
+    uid
+    nombre
+    apellido
+    email
+    telefono
+    rol
+    activo
+  }
+}
+
+# FR-018, FR-019 — Turnos propios del cliente (próximos + historial)
+# Actor: usuario autenticado (cualquier rol)
+# Pantalla: /mis-turnos (US3)
+# Nota: la clasificación próximos/historial se aplica en el cliente
+# usando las reglas formales de data-model.md sección 4.
+# La query retorna TODOS los turnos del usuario sin filtrar por estado o fecha.
+query ObtenerTurnosPropios @auth(level: USER) {
+  turnos(
+    where: { usuarioUid: { eq_expr: "auth.uid" } }
+    orderBy: [{ fecha: ASC }, { horario: ASC }]
+  ) {
+    id
+    servicio
+    fecha
+    horario
+    estado
+    patente
+    tipoVehiculo
+    creadoEn
+  }
+}
+
+# FR-020 — Listar todos los usuarios registrados (solo admin)
+# Actor: admin
+# Pantalla: /admin/usuarios (US5)
+# Nota: la verificación de rol "admin" se realiza en AdminRoute (React Router)
+# antes de ejecutar esta query. Ver research.md RD-006.
+query ObtenerUsuariosAdmin @auth(level: USER) {
+  usuarios(orderBy: [{ apellido: ASC }, { nombre: ASC }]) {
+    uid
+    nombre
+    apellido
+    email
+    telefono
+    rol
+    activo
+  }
+}
+
+# FR-026, FR-027 — Listar turnos con filtros opcionales (solo admin)
+# Actor: admin
+# Pantalla: /admin/turnos (US6)
+# Variables opcionales: si una variable es null, el filtro correspondiente se ignora.
+# Nota: la combinación de filtros usa _and; los valores null se omiten del where.
+query ObtenerTurnosAdmin(
+  $fecha: Date
+  $estado: String
+  $servicio: String
+) @auth(level: USER) {
+  turnos(
+    where: {
+      _and: [
+        { fecha: { eq: $fecha } }
+        { estado: { eq: $estado } }
+        { servicio: { eq: $servicio } }
+      ]
+    }
+    orderBy: [{ fecha: ASC }, { horario: ASC }]
+  ) {
+    id
+    servicio
+    fecha
+    horario
+    estado
+    patente
+    tipoVehiculo
+    creadoEn
+    usuario {
+      uid
+      nombre
+      apellido
+      email
+    }
+  }
+}
+
+# FR-030 — Buscar turnos por fecha específica (solo admin)
+# Actor: admin
+# Pantalla: /admin/turnos (US6)
+# Nota: cubierto también por ObtenerTurnosAdmin con $fecha no nulo.
+# Se documenta como query independiente para trazabilidad explícita de FR-030.
+query BuscarTurnosPorFecha($fecha: Date!) @auth(level: USER) {
+  turnos(
+    where: { fecha: { eq: $fecha } }
+    orderBy: [{ horario: ASC }]
+  ) {
+    id
+    servicio
+    fecha
+    horario
+    estado
+    patente
+    tipoVehiculo
+    usuario {
+      uid
+      nombre
+      apellido
+    }
+  }
+}
+
+# FR-031 — Buscar turnos por nombre/apellido de cliente o por patente (solo admin)
+# Actor: admin
+# Pantalla: /admin/turnos, campo de búsqueda libre (US6 escenario 5)
+# Requisito: coincidencia parcial insensible a mayúsculas y acentos.
+# Implementación: depends on Data Connect support for case-insensitive ILIKE.
+# Ver research.md RD-003 para estrategia de índices con pg_trgm.
+#
+# $textoBusqueda: fragmento de nombre, apellido o patente a buscar.
+query BuscarTurnosPorClienteOPatente(
+  $textoBusqueda: String!
+) @auth(level: USER) {
+  turnos(
+    where: {
+      _or: [
+        { patente: { contains: $textoBusqueda } }
+        { usuario: { nombre: { contains: $textoBusqueda } } }
+        { usuario: { apellido: { contains: $textoBusqueda } } }
+      ]
+    }
+    orderBy: [{ fecha: ASC }, { horario: ASC }]
+  ) {
+    id
+    servicio
+    fecha
+    horario
+    estado
+    patente
+    tipoVehiculo
+    usuario {
+      uid
+      nombre
+      apellido
+    }
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MUTATIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
+# FR-001 — Registrar un nuevo usuario en Data Connect
+# Actor: usuario recién autenticado en Firebase Auth (nivel USER, uid = el suyo propio)
+# Pantalla: /registro (US1)
+# Flujo: createUserWithEmailAndPassword → (éxito) → RegistrarUsuario
+# El rol se fija en "user" y activo en true; no son editables por el cliente en el registro.
+mutation RegistrarUsuario(
+  $nombre: String!
+  $apellido: String!
+  $email: String!
+  $telefono: String!
+) @auth(level: USER) {
+  usuario_insert(
+    data: {
+      uid_expr: "auth.uid"
+      nombre: $nombre
+      apellido: $apellido
+      email: $email
+      telefono: $telefono
+      rol: "user"
+      activo: true
+    }
+  )
+}
+
+# FR-007 — Editar datos del perfil propio
+# Actor: usuario autenticado (cualquier rol)
+# Pantalla: /perfil (US4)
+# Campos editables: nombre, apellido, teléfono.
+# Campo email: NO es editable por el propio usuario (Assumptions-6, FR-007).
+mutation ActualizarPerfilPropio(
+  $nombre: String!
+  $apellido: String!
+  $telefono: String!
+) @auth(level: USER) {
+  usuario_update(
+    key: { uid_expr: "auth.uid" }
+    data: {
+      nombre: $nombre
+      apellido: $apellido
+      telefono: $telefono
+    }
+  )
+}
+
+# FR-010, FR-011, FR-014 — Crear un turno (operación atómica)
+# Actor: cliente autenticado (cualquier rol)
+# Pantalla: /reservar (US2)
+#
+# NOTA CRÍTICA DE ATOMICIDAD (FR-014):
+# Esta mutation DEBE verificar que no exista otro turno con el mismo (fecha, horario)
+# en estado "pendiente" o "confirmado" antes de insertar, en una sola operación atómica.
+# Si Data Connect no soporta lógica condicional nativa en mutations, implementar
+# como Cloud Function callable. Ver research.md RD-002.
+#
+# El estado se inserta directamente como "confirmado" porque la lógica atómica
+# garantiza disponibilidad. Si el horario está ocupado, la mutation retorna error
+# antes de insertar.
+mutation CrearTurno(
+  $servicio: String!
+  $fecha: Date!
+  $horario: String!
+  $patente: String!
+  $tipoVehiculo: String!
+) @auth(level: USER) {
+  turno_insert(
+    data: {
+      usuarioUid_expr: "auth.uid"
+      servicio: $servicio
+      fecha: $fecha
+      horario: $horario
+      estado: "confirmado"
+      patente: $patente
+      tipoVehiculo: $tipoVehiculo
+      creadoEn_expr: "request.time"
+    }
+  )
+  # PENDIENTE DE VALIDACIÓN: confirmar si Data Connect soporta
+  # INSERT ... WHERE NOT EXISTS equivalente, o si se requiere Cloud Function.
+  # Ver research.md RD-002 acción pendiente Fase 2.
+}
+
+# FR-016 — Cancelar turno propio (solo si faltan > 30 minutos para su inicio)
+# Actor: cliente autenticado, propietario del turno
+# Pantalla: /mis-turnos (US2 escenario 5, US3)
+#
+# PRECONDICIÓN (validada en hook usePuedeCancelar antes de llamar la mutation):
+#   - turno.usuarioUid === auth.uid
+#   - turno.estado ∈ { "pendiente", "confirmado" }
+#   - (turno.fecha + turno.horario) - ahora > 30 minutos
+#
+# La mutation no valida la regla de 30 min por sí sola.
+# La Cloud Function de disponibilidad (FR-013) actualiza Firestore al detectar
+# el cambio de estado a "cancelado".
+mutation CancelarTurnoPropio($turnoId: UUID!) @auth(level: USER) {
+  turno_update(
+    key: { id: $turnoId }
+    data: { estado: "cancelado" }
+  )
+  # Nota: verificar si Data Connect permite agregar WHERE usuarioUid = auth.uid
+  # para garantizar que un usuario no pueda cancelar un turno ajeno.
+}
+
+# FR-021 — Editar datos de cualquier usuario (solo admin)
+# Actor: admin
+# Pantalla: /admin/usuarios (US5 escenario 2)
+mutation ActualizarDatosUsuario(
+  $uid: String!
+  $nombre: String!
+  $apellido: String!
+  $telefono: String!
+) @auth(level: USER) {
+  usuario_update(
+    key: { uid: $uid }
+    data: {
+      nombre: $nombre
+      apellido: $apellido
+      telefono: $telefono
+    }
+  )
+}
+
+# FR-022 — Cambiar el rol de un usuario (solo admin)
+# Actor: admin
+# Pantalla: /admin/usuarios (US5 escenario 3)
+# $rol: "user" o "admin"
+# El cambio es efectivo a partir de la próxima sesión del usuario afectado.
+mutation CambiarRolUsuario(
+  $uid: String!
+  $rol: String!
+) @auth(level: USER) {
+  usuario_update(
+    key: { uid: $uid }
+    data: { rol: $rol }
+  )
+}
+
+# FR-023 — Activar o desactivar la cuenta de un usuario (solo admin)
+# Actor: admin
+# Pantalla: /admin/usuarios (US5 escenario 4)
+#
+# IMPORTANTE: esta mutation solo actualiza el campo `activo` en Data Connect.
+# El bloqueo real en Firebase Authentication requiere una Cloud Function callable
+# que ejecute admin.auth().updateUser(uid, { disabled: !activo }).
+# Ver research.md RD-006 para la estrategia de doble bloqueo.
+mutation SetActivoUsuario(
+  $uid: String!
+  $activo: Boolean!
+) @auth(level: USER) {
+  usuario_update(
+    key: { uid: $uid }
+    data: { activo: $activo }
+  )
+}
+
+# FR-009 — Eliminar la propia cuenta del usuario
+# Actor: usuario autenticado (cualquier rol)
+# Pantalla: /perfil (US4 escenario 3)
+#
+# Flujo completo:
+#   1. Cliente muestra modal de confirmación.
+#   2. Cliente llama EliminarCuentaPropia → borra registro en Data Connect.
+#   3. Cliente llama deleteUser() de Firebase Auth.
+#   4. Auth trigger onUserDeleted → Cloud Function cancela todos los turnos
+#      futuros activos del usuario (FR-033).
+mutation EliminarCuentaPropia @auth(level: USER) {
+  usuario_delete(key: { uid_expr: "auth.uid" })
+}
+
+# FR-024 — Eliminar la cuenta de cualquier usuario (solo admin)
+# Actor: admin
+# Pantalla: /admin/usuarios (US5 escenario 5)
+#
+# Flujo completo:
+#   1. Admin confirma la eliminación en el panel.
+#   2. Admin llama Cloud Function callable que ejecuta admin.auth().deleteUser(uid)
+#      (no se puede hacer desde el cliente).
+#   3. Auth trigger onUserDeleted → Cloud Function cancela turnos futuros activos (FR-033).
+#   4. Esta mutation se llama también para borrar el registro en Data Connect
+#      (puede llamarse desde la Cloud Function o desde el cliente después de confirmar).
+mutation EliminarCuentaAdmin($uid: String!) @auth(level: USER) {
+  usuario_delete(key: { uid: $uid })
+}
+
+# FR-028 — Cambiar el estado de un turno manualmente (solo admin)
+# Actor: admin
+# Pantalla: /admin/turnos (US6 escenario 3)
+#
+# Transiciones válidas desde el panel admin:
+#   pendiente   → confirmado
+#   confirmado  → completado
+#   pendiente   → cancelado
+#   confirmado  → cancelado
+#
+# Transiciones inválidas (validadas en hook useTransicionesValidas antes del call):
+#   completado  → cualquier estado (estado final)
+#   cancelado   → cualquier estado (estado final)
+#   pendiente   → completado (debe pasar por confirmado)
+#   confirmado  → pendiente  (no existe esta transición)
+#
+# Si $nuevoEstado = "cancelado", la Cloud Function de disponibilidad (FR-013)
+# actualizará el slot de Firestore.
+mutation CambiarEstadoTurno(
+  $turnoId: UUID!
+  $nuevoEstado: String!
+) @auth(level: USER) {
+  turno_update(
+    key: { id: $turnoId }
+    data: { estado: $nuevoEstado }
+  )
+}
+
+# FR-029 — Cancelar un turno desde el panel admin
+# Actor: admin
+# Pantalla: /admin/turnos (US6 escenario 4)
+# Nota: semánticamente equivalente a CambiarEstadoTurno con $nuevoEstado = "cancelado".
+# Se documenta como mutation independiente para trazabilidad explícita de FR-029.
+# Al cancelar, la Cloud Function trigger actualizará la disponibilidad en Firestore.
+mutation CancelarTurnoAdmin($turnoId: UUID!) @auth(level: USER) {
+  turno_update(
+    key: { id: $turnoId }
+    data: { estado: "cancelado" }
+  )
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPERACIONES INTERNAS (solo Cloud Functions via Admin SDK)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Las siguientes operaciones NO se exponen en el conector web. Se documentan
+# aquí por trazabilidad. Se implementan en functions/src/ usando el Admin SDK
+# de Data Connect o queries SQL directas contra Cloud SQL.
+
+# FR-033 — Cancelar todos los turnos futuros activos de un usuario
+# Llamada por: Cloud Function Auth trigger onUserDeleted
+# Equivalente SQL:
+#   UPDATE turnos
+#   SET estado = 'cancelado'
+#   WHERE usuarioUid = $userId
+#     AND estado IN ('pendiente', 'confirmado')
+#     AND fecha >= CURRENT_DATE;
+#
+# mutation CancelarTurnosFuturosDeUsuario($userId: String!) {
+#   turnos_updateMany(
+#     where: {
+#       usuarioUid: { eq: $userId }
+#       estado: { in: ["pendiente", "confirmado"] }
+#       fecha: { gte_expr: "today()" }
+#     }
+#     data: { estado: "cancelado" }
+#   )
+# }
+
+# FR-034 — Transicionar turnos confirmados a completado (Cloud Scheduler)
+# Llamada por: Cloud Scheduler cada 5 minutos
+# Equivalente SQL:
+#   UPDATE turnos
+#   SET estado = 'completado'
+#   WHERE estado = 'confirmado'
+#     AND (fecha || 'T' || horario)::timestamp + interval '15 minutes' <= NOW();
+#
+# mutation CompletarTurnosVencidos {
+#   turnos_updateMany(
+#     where: {
+#       estado: { eq: "confirmado" }
+#       # La condición de fecha+horario+15min <= ahora se evalúa en la Cloud Function
+#       # antes de llamar esta mutation; se pasan los IDs explícitos.
+#     }
+#     data: { estado: "completado" }
+#   )
+# }
